@@ -1,2 +1,35 @@
-node_modules
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment secrets
 .env
+**/.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Build output
+dist/
+build/
+.next/
+out/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Database
+*.sqlite
+*.sqlite3
+
+# Misc
+.cache/
+coverage/
+*.pid
