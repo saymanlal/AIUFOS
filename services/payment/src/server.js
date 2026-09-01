@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const orderRoutes = require('./routes/orders');
 const paymentRoutes = require('./routes/payments');
+const webhookRoutes = require('./routes/webhooks');
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use(rateLimit({ windowMs: 60 * 1000, max: 100 }));
 app.use('/v1/auth', authRoutes);
 app.use('/v1/orders', orderRoutes);
 app.use('/v1/payments', paymentRoutes);
+app.use('/v1/webhooks', webhookRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
