@@ -1,19 +1,15 @@
 const pool = require('../db/pool');
+const ipReputation = require('../reputation/ipReputation');
 
-// Each rule returns { signal, weight, detail } or null if not triggered
-async function checkVelocity({ merchant_id, customer_ip, customer_email }) {
+async function checkVelocity({ customer_ip }) {
   const result = await pool.query(
     `SELECT COUNT(*) FROM payments
      WHERE customer_ip = $1 AND created_at > now() - interval '10 minutes'`,
     [customer_ip]
   );
   const count = parseInt(result.rows[0].count, 10);
-  if (count >= 5) {
-    return { signal: 'velocity_ip', weight: 35, detail: { count, window: '10m' } };
-  }
-  if (count >= 3) {
-    return { signal: 'velocity_ip_moderate', weight: 15, detail: { count, window: '10m' } };
-  }
+  if (count >= 5) return { signal: 'velocity_ip', weight: 35, detail: { count, window: '10m' } };
+  if (count >= 3) return { signal: 'velocity_ip_moderate', weight: 15, detail: { count, window: '10m' } };
   return null;
 }
 
@@ -25,9 +21,7 @@ async function checkMultipleCardsPerDevice({ device_fingerprint }) {
     [device_fingerprint]
   );
   const count = parseInt(result.rows[0].count, 10);
-  if (count >= 4) {
-    return { signal: 'multi_account_device', weight: 30, detail: { distinct_emails: count } };
-  }
+  if (count >= 4) return { signal: 'multi_account_device', weight: 30, detail: { distinct_emails: count } };
   return null;
 }
 
@@ -40,13 +34,25 @@ function checkDisposableEmail({ customer_email }) {
   return null;
 }
 
-// Stub for now — Phase 2 wires this to a real IP reputation API/db
-function checkIpReputation({ customer_ip }) {
-  const knownBadIpsStub = []; // populate later from threat intel feed
-  if (knownBadIpsStub.includes(customer_ip)) {
-    return { signal: 'known_bad_ip', weight: 50, detail: { ip: customer_ip } };
+async function checkIpReputation({ customer_ip }) {
+  const rep = await ipReputation.checkIp(customer_ip);
+  if (!rep) return null; // private IP, no API key, or lookup failed — skip silently
+
+  const signals = [];
+
+  if (rep.abuse_score >= 75) {
+    signals.push({ signal: 'high_abuse_ip', weight: 50, detail: { abuse_score: rep.abuse_score, country: rep.country_code } });
+  } else if (rep.abuse_score >= 40) {
+    signals.push({ signal: 'moderate_abuse_ip', weight: 25, detail: { abuse_score: rep.abuse_score, country: rep.country_code } });
   }
-  return null;
+
+  if (rep.is_vpn_or_proxy) {
+    signals.push({ signal: 'tor_exit_node', weight: 40, detail: { ip: 'redacted' } });
+  }
+
+  // Return highest-weight signal only (avoid double-counting from one source)
+  if (signals.length === 0) return null;
+  return signals.reduce((a, b) => (a.weight > b.weight ? a : b));
 }
 
 async function evaluate(context) {

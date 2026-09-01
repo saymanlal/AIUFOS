@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../db/pool');
 const authMiddleware = require('../middleware/auth');
 const ruleEngine = require('../fraud/ruleEngine');
+const { dispatchEvent } = require('../webhooks/dispatcher');
 
 const router = express.Router();
 
@@ -41,6 +42,20 @@ router.post('/', authMiddleware, async (req, res) => {
       [payment.id, t.signal, t.weight, t.detail]
     );
   }
+
+  let event = 'payment.created';
+  if (decision === 'reject') event = 'payment.failed';
+  else if (decision === 'review' || decision === 'otp') event = 'payment.risk_flagged';
+
+  dispatchEvent(req.merchant.merchant_id, event, {
+    payment_id: payment.id,
+    order_id: payment.order_id,
+    amount: payment.amount,
+    status: payment.status,
+    risk_score: score,
+    risk_decision: decision,
+    triggered_signals: triggered.map(t => t.signal)
+  }); // fire and forget — doesn't block the response
 
   res.status(201).json({
     payment_id: payment.id,
